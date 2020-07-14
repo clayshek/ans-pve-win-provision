@@ -1,0 +1,92 @@
+# pve-win-vm-base
+# ansible-playbook -i inventory.yml --ask-vault-pass provision-base-vms.yml
+# --- Or to limit to a specific host or host group:
+# ansible-playbook -i inventory.yml -l [HOST|HOSTGROUP] --ask-vault-pass provision-base-vms.yml
+---
+- hosts: all
+  gather_facts: false
+  
+  tasks:
+    # Get next available Proxmox VE VMID, semi-random, idempotent, seed from hostname
+    - name: Get available VMID
+      vars:
+        rand_vmid: "{{9999 | random(seed=inventory_hostname)}}"  
+      command: pvesh get /cluster/nextid -vmid {{rand_vmid}}
+      register: next_vmid
+      failed_when: next_vmid.rc != 0      
+
+    # Create temp directory, template out unattend answer file
+    - name: Create temp directory
+      file:
+        path: /tmp/{{vm_name}}
+        state: directory
+    - name: Template out unattend answer file        
+      template:
+        src: ./unattend.xml.tpl
+        dest: /tmp/{{vm_name}}/unattend.xml
+
+    # Create ISO with answer file    
+    - name: Create ISO file
+      become: true
+      command: "genisoimage -J -r -o /var/lib/vz/template/iso/Unattend-{{vm_name}}.iso /tmp/{{vm_name}}/"
+      register: iso_created
+
+    # Create VM from existing template, update specs. Retry logic to address locks.  
+    - name: Create VM
+      command: "qm clone {{clone_template_vmid}} {{next_vmid.stdout}} --name {{vm_name}} --full true" 
+      register: vm_creation_result
+      until: vm_creation_result.rc == 0
+      retries: 10
+      delay: 15      
+
+    - name: Wait another 15 sec for VM build and unlock
+      wait_for:
+        timeout   : 15
+
+    # Customize VM specs 
+    - name: Customize VM hardware specs, Add CD drive with unattend ISO
+      command: "qm set {{next_vmid.stdout}} --onboot {{start_at_boot}} --sockets {{vm_sockets}} --cores {{vm_cores}} --cpu cputype={{cpu_type}} --memory {{vm_memory_mb}} --cdrom local:iso/Unattend-{{vm_name}}.iso,media=cdrom"
+   
+    # Add additional VHD(s), if specified. With retry logic to address locking on /var/lock/pve-manager/pve-storage* file
+    - name: Add additional data drive if specified
+      command: "qm set {{next_vmid.stdout}} --scsi{{ansible_loop.index}} {{pve_storage_id}}:{{item}},format=qcow2"
+      when: use_additional_data_drive|bool
+      register: drive_addition_result
+      until: drive_addition_result.rc == 0
+      retries: 10
+      delay: 20
+      loop: "{{additional_drives}}"
+      loop_control:
+        extended: yes
+
+    # Add additional NIC(s), if specified. With retry logic to address locking
+    - name: Add additional network adapters if specified
+      command: "qm set {{next_vmid.stdout}} --net{{ansible_loop.index}} {{item}},bridge=vmbr0,firewall=1"
+      when: use_additional_nic|bool
+      register: nic_addition_result
+      until: nic_addition_result.rc == 0
+      retries: 5
+      delay: 15
+      loop: "{{additional_nics}}"
+      loop_control:
+        extended: yes
+
+    # Cleanup temp files
+    - name: Cleanup temp files used for ISO build
+      file:
+        path: /tmp/{{vm_name}}
+        state: absent
+      when: iso_created.changed
+   
+    # Start VM, ready for further Ansible config
+    - name: Start VM
+      command: "qm start {{next_vmid.stdout}}"
+
+    - name: Done
+      debug:
+        msg: VM build {{vm_name}}, with VMID {{next_vmid.stdout}} complete, ready for further config.
+
+    - name: ISO-Reminder
+      debug:
+        msg: Manually remove any ISOs with unattend file containing admin credentials when setup is complete.        
+        

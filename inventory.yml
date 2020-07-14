@@ -1,0 +1,17 @@
+---
+domaincontrollers:
+  hosts:
+    dc01:
+    dc02:
+scvmm:
+  hosts:
+    scvmm01:    
+wac:
+  hosts:
+    wac01:
+hyperv:
+  hosts:
+    hvh01:
+    hvh02:
+    hvh03:
+    hvh04:
