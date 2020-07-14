@@ -1,0 +1,42 @@
+# hvh03.yml variables file for host hvh03
+---
+
+# ansible_host is the PVE node on which to provision VM
+ansible_host: '192.168.2.31'
+
+# PVE VM Clone Provisioning Variables
+clone_template_vmid: 5728
+vm_name:  hvh04
+pve_storage_id: vm-store
+vm_cores: 4
+vm_sockets: 4
+# cpu_type: Default is 'kvm64', but use 'host' if nested virtualization required
+cpu_type: host
+vm_memory_mb: 10240
+start_at_boot: yes
+# Additional Drive Settings
+use_additional_data_drive: true
+# use_additional_data_drive must be true for below
+# Set list item 'additional_drives' as size in GB. Add ',ssd=1' to emulate SSD
+additional_drives:
+  - 500,wwn=0x5000c50045ea71ad,serial=yCCfBgJ1
+  - 500,wwn=0x5000c50045ea72ad,serial=yCCfBgJ2
+  - 500,wwn=0x5000c50045ea73ad,serial=yCCfBgJ3
+# Additional Network Adapter Settings
+use_additional_nic: true
+# use_additional_nic must be true for below
+# Add an additional list item for each NIC to be added, with model (virtio, e1000, etc) as the value
+additional_nics:
+  - virtio
+# Unattend.xml template variables:
+vm_admin_pass: !vault |
+          $ANSIBLE_VAULT;1.1;AES256
+          61376164633934373538613631353339616532336564373535303738336635643762393932306138
+          3061336134313166636336386338303865313534613964640a333061663831343138343066333966
+          34333263393366343635663637396363303931303764303138346533326162316364613832653039
+          3566316139333064610a663333313733613732386130343431666233323535363737366363353862
+          63396236346461626165663336303563356461663638323335343366366361626630
+vm_time_zone: 'Eastern Standard Time'
+vm_static_ip_and_mask: '192.168.2.54/24'
+vm_default_gateway: '192.168.2.1'
+vm_dns_server: '192.168.2.1'
